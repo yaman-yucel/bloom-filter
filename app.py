@@ -16,7 +16,6 @@ async def lifespan(app: FastAPI):
     false_positive_rate = float(os.getenv("BLOOM_FILTER_FALSE_POSITIVE_RATE", "0.01"))
     bloom_filter = BloomFilter(expected_items, false_positive_rate)
     yield
-    # Cleanup if needed (currently nothing to clean up)
 
 
 app = FastAPI(title="Bloom Filter Service", version="0.1.0", lifespan=lifespan)
