@@ -1,16 +1,30 @@
-from fastapi import FastAPI, HTTPException
+from contextlib import asynccontextmanager
+import os
+from fastapi import FastAPI
 from bloom_filter import BloomFilter
 from model import InitRequest, ItemRequest, CheckResponse, StatsResponse
-
-
-app = FastAPI(title="Bloom Filter Service", version="0.1.0")
+from fastapi.responses import RedirectResponse
 
 bloom_filter: BloomFilter | None = None
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize bloom filter on startup."""
+    global bloom_filter
+    expected_items = int(os.getenv("BLOOM_FILTER_EXPECTED_ITEMS", "10000"))
+    false_positive_rate = float(os.getenv("BLOOM_FILTER_FALSE_POSITIVE_RATE", "0.01"))
+    bloom_filter = BloomFilter(expected_items, false_positive_rate)
+    yield
+    # Cleanup if needed (currently nothing to clean up)
+
+
+app = FastAPI(title="Bloom Filter Service", version="0.1.0", lifespan=lifespan)
+
+
 @app.post("/init", response_model=StatsResponse)
 async def init_bloom_filter(request: InitRequest):
-    """Initialize the bloom filter with specified parameters."""
+    """Reinitialize the bloom filter with specified parameters."""
     global bloom_filter
     bloom_filter = BloomFilter(request.expected_items, request.false_positive_rate)
     return StatsResponse(**bloom_filter.get_stats())
@@ -19,8 +33,6 @@ async def init_bloom_filter(request: InitRequest):
 @app.post("/add")
 async def add_item(request: ItemRequest):
     """Add an item to the bloom filter."""
-    if bloom_filter is None:
-        raise HTTPException(status_code=400, detail="Bloom filter not initialized. Call /init first.")
     bloom_filter.add(request.item)
     return {"message": f"Item '{request.item}' added successfully"}
 
@@ -28,8 +40,6 @@ async def add_item(request: ItemRequest):
 @app.post("/check", response_model=CheckResponse)
 async def check_item(request: ItemRequest):
     """Check if an item exists in the bloom filter."""
-    if bloom_filter is None:
-        raise HTTPException(status_code=400, detail="Bloom filter not initialized. Call /init first.")
     exists = bloom_filter.check(request.item)
     return CheckResponse(item=request.item, exists=exists)
 
@@ -37,22 +47,16 @@ async def check_item(request: ItemRequest):
 @app.get("/stats", response_model=StatsResponse)
 async def get_stats():
     """Get statistics about the bloom filter."""
-    if bloom_filter is None:
-        raise HTTPException(status_code=400, detail="Bloom filter not initialized. Call /init first.")
     return StatsResponse(**bloom_filter.get_stats())
 
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
 async def root():
-    """Root endpoint with API information."""
-    return {
-        "service": "Bloom Filter Service",
-        "version": "0.1.0",
-        "endpoints": {
-            "POST /init": "Initialize the bloom filter",
-            "POST /add": "Add an item to the bloom filter",
-            "POST /check": "Check if an item exists",
-            "GET /stats": "Get bloom filter statistics",
-        },
-    }
+    """Redirect root endpoint to the documentation."""
+    return RedirectResponse(url="/docs")
 
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)

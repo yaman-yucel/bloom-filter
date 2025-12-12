@@ -21,4 +21,3 @@ class StatsResponse(BaseModel):
     bits_set: int
     expected_items: int
     false_positive_rate: float
-
